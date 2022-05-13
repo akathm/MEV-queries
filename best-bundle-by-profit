@@ -1,0 +1,35 @@
+WITH block_times AS (SELECT
+    block_number
+    , miner
+    , (timestamp-(LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER)))  AS time_required
+    , LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER DESC) AS next_timestamp
+    FROM alex_marx.BLOCK
+    QUALIFY LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER) is not null
+    )
+, best_bundle_in_range AS (SELECT
+    block_times.BLOCK_NUMBER
+    , ID as mev_geth_logger_id
+    , TO_BOOLEAN(LOWER(ISMEGABUNDLE)) AS megabundle
+    , TO_BOOLEAN(LOWER(ISFLASHBOTS))  AS flashbots
+    , WORKERID
+    FROM LOG_TASK
+    LEFT JOIN block_times
+        ON LOG_TASK.BLOCKNUMBER = block_times.BLOCK_NUMBER
+    WHERE DATEDIFF(second, TO_TIMESTAMP(TASKCREATEDAT), TO_TIMESTAMP(next_timestamp)) BETWEEN 0 AND 3
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY LOG_TASK.BLOCKNUMBER ORDER BY LOG_TASK.PROFITETH DESC) = 1
+)
+-- **Following 2 queries can be run to check outcomes/spot-check on etherscan https://etherscan.io/block/14119664; 3rd query to address workerid success rate
+-- select block_number FROM best_bundle_in_range WHERE flashbots = true
+-- select block_number FROM best_bundle_in_range WHERE flashbots = true AND megabundle = true
+-- select workerid, COUNT (distinct block_number) FROM best_bundle_in_range GROUP BY 1
+
+SELECT COUNT (DISTINCT BLOCK_NUMBER)            AS total_n_blocks_with_viable_transactions
+    , COUNT (DISTINCT CASE
+                        WHEN flashbots = true
+                        THEN BLOCK_NUMBER END)  AS n_flashbots_submitted
+    , COUNT (DISTINCT CASE
+                        WHEN flashbots = true
+                            AND megabundle = true
+                        THEN BLOCK_NUMBER END)  AS n_flashbots_megabundles
+    , n_flashbots_megabundles/total_n_blocks_with_viable_transactions*100 AS pct_megabundles_won
+    FROM best_bundle_in_range
