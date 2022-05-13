@@ -1,0 +1,42 @@
+--for blocks which were tracked by mev-geth-log-tracker, 299 were "viable" meaning, there was at least 1 submission tracked that occurred before the last refresh interval
+--this count is inclusive of mempool submissions, as well as flashbots submissions; below is the full query, including also counts for statistical calculations for valid submission data
+--for those blocks where no viable submission was recorded, further investigation can be found in the Discrepancies sheet, 'Viable vs. Non-viable'
+--https://docs.google.com/spreadsheets/d/10sQLKZdTOB_usSPoWuAoPnR00W1K_99dvrKwuh1eX_s/edit#gid=504405282
+
+
+WITH block_times AS (SELECT
+    block_number
+    , miner
+    , (timestamp-(LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER)))  AS time_required
+    , LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER DESC) AS next_timestamp
+    FROM alex_marx.BLOCK
+    QUALIFY LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER) is not null --omits first block where time_required calc is impossible
+    )
+, cut_off_calc AS (SELECT BLOCK_NUMBER
+                        , ROUND(time_required / 3) AS last_refresh --can change refresh factor here to check assumptions
+                        , last_refresh * 1000      AS mscutoff --transfers into ms for closest comparison
+                   FROM block_times
+    )
+, best_bundle_in_range AS (SELECT
+    block_times.BLOCK_NUMBER
+    , ID                                AS mev_geth_logger_id
+    , TO_BOOLEAN(LOWER(ISMEGABUNDLE))   AS megabundle
+    , TO_BOOLEAN(LOWER(ISFLASHBOTS))    AS flashbots
+    , WORKERID
+    , time_required
+    , next_timestamp
+    FROM LOG_TASK
+    LEFT JOIN block_times
+        ON LOG_TASK.BLOCKNUMBER = block_times.BLOCK_NUMBER
+    LEFT JOIN cut_off_calc
+        ON LOG_TASK.BLOCKNUMBER = cut_off_calc.block_number
+    WHERE mssinceblockstart <= mscutoff
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY LOG_TASK.BLOCKNUMBER ORDER BY LOG_TASK.PROFITETH DESC) = 1
+    )
+, viable AS (SELECT
+                blocknumber AS viable_block
+              FROM LOG_TASK
+                LEFT JOIN cut_off_calc
+              WHERE MSSINCEBLOCKSTART <= mscutoff
+    )
+SELECT blocknumber, COUNT (DISTINCT viable_id) FROM LOG_TASK LEFT JOIN viable on viable.viable_block = log_task.BLOCKNUMBER GROUP BY 1
