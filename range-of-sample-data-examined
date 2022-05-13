@@ -1,0 +1,19 @@
+WITH block_times AS (SELECT
+    block_number
+    , miner
+    , (timestamp-(LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER)))  AS time_required
+    FROM BLOCK
+    QUALIFY LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER) is not null --omits most recent block which has no "later" block to reference its own end-time
+    )
+SELECT miner
+   , min(BLOCK_NUMBER)
+   , max(BLOCK_NUMBER)
+   , min(time_required)
+   , max(time_required)
+   , avg(time_required)
+   , median(time_required)
+FROM block_times
+WHERE BLOCK_NUMBER IN (SELECT blocknumber from LOG_TASK)
+GROUP BY 1
+
+/* optional group by miner to examine norms; optional group by hour of submission to establish high traffic intervals
