@@ -3,17 +3,135 @@ WITH block_times AS (SELECT
     , miner
     , (timestamp-(LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER)))  AS time_required
     FROM BLOCK
-    QUALIFY LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER) is not null --omits most recent block which has no "later" block to reference its own end-time
+    QUALIFY LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER) is not null --omits most first block which has no reference point
     )
-SELECT miner
-   , min(BLOCK_NUMBER)
+SELECT
+   min(BLOCK_NUMBER)
    , max(BLOCK_NUMBER)
    , min(time_required)
    , max(time_required)
    , avg(time_required)
    , median(time_required)
 FROM block_times
+WHERE BLOCK_NUMBER IN (SELECT blocknumber from LOG_TASK) --limiting to only those blocks where mev-geth-logger data was provided
+
+/* optional group by miner to examine norms
+
+WITH block_times AS (SELECT
+    block_number
+    , miner
+    , EXTRA_DATA
+    , (timestamp-(LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER)))  AS time_required
+    FROM alex_marx.BLOCK
+    QUALIFY LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER) is not null
+    )
+SELECT miner
+    , listagg(DISTINCT EXTRA_DATA) --aggregating here to see whether miner notes vary (they do) and whether consistent reg-ex extractible formatting was used (its not)
+    , min(BLOCK_NUMBER)
+    , max(BLOCK_NUMBER)
+    , min(time_required)
+    , max(time_required)
+    , avg(time_required)
+    , median(time_required)
+FROM block_times
 WHERE BLOCK_NUMBER IN (SELECT blocknumber from LOG_TASK)
 GROUP BY 1
 
-/* optional group by miner to examine norms; optional group by hour of submission to establish high traffic intervals
+/* more refined version from above noted learnings on miner-identities + cross-reference with Etherscan
+
+WITH block_times AS (SELECT
+    block_number
+    , miner
+    , EXTRA_DATA
+    , (timestamp-(LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER)))  AS time_required
+    FROM alex_marx.BLOCK
+    QUALIFY LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER) is not null --omits most recent block which has no "later" block to reference its own end-time
+    )
+SELECT
+    CASE WHEN EXTRA_DATA ilike '%speth%' THEN 'speth03ɳ'
+         WHEN EXTRA_DATA ilike '%geth%' THEN 'gethgolinux'
+         WHEN EXTRA_DATA ilike 'poolin%' THEN 'poolin.com'
+         WHEN EXTRA_DATA ilike 'nanopool%' OR EXTRA_DATA ilike 'eu2' THEN 'nanopool.org'
+         WHEN miner = '0xea674fdde714fd979de3edf0f56aa9716b898ec8' THEN 'ethermine.org'
+         WHEN miner = '0xeea5b82b61424df8020f5fedd81767f2d0d25bfb' THEN 'BTC.com'
+         WHEN miner = '0x1ca43b645886c98d7eb7d27ec16ea59f509cbe1a' THEN 'ViaBTC US3'
+         WHEN miner = '0x45a36a8e118c37e4c47ef4ab827a7c9e579e11e2' THEN 'AntPool'
+         WHEN miner = '0x433022c4066558e7a32d850f02d2da5ca782174d' THEN 'K1Pool.com'
+         WHEN miner = '0x1ad91ee08f21be3de0ba2ba6918e714da6b45836' THEN 'Hiveon'
+         WHEN miner = '0x7f101fe45e6649a6fb8f3f8b43ed03d353f2b90c' THEN 'Flexpool'
+         WHEN miner = '0x00192fb10df37c9fb26829eb2cc623cd1bf599e8' THEN '2miners'
+         WHEN miner = '0xc365c3315cf926351ccaf13fa7d19c8c4058c8e1' THEN 'pool.binance'
+         WHEN miner = '0x4069e799da927c06b430e247b2ee16c03e8b837d' THEN '666 mining'
+         WHEN miner = '0x26b3eea1cd34a4aff7ce828a5f71daac042d38e0' THEN 'Luxor Tech'
+         WHEN miner = '0x829bd824b016326a401d083b33d092293333a830' THEN 'F2Pool'
+         WHEN miner = '0x8b4de256180cfec54c436a470af50f9ee2813dbb' THEN 'SBI Crypto Pool'
+         WHEN miner = '0x3ecef08d0e2dad803847e052249bb4f8bff2d5bb' OR EXTRA_DATA ilike 'seo%' THEN 'MiningPoolHub'
+         WHEN miner IN ('0xc7fabfd21f0b3254686337b63b4f1282c29aadd8',
+                        '0x776bb566dc299c9e722773d2a04b401e831a6dc8',
+                        '0x52bc44d5378309ee2abf1539bf71de1b7d7be3b5',
+                        '0x09ab1303d3ccaf5f018cd511146b07a240c70294',
+                        '0x03e75d7dd38cce2e20ffee35ec914c57780a8e29',
+                        '0xc3348b43d3881151224b490e4aa39e03d2b1cdea',
+                        '0xc93452a74e596e81e4f73ca1acff532089ad4c62'
+                       ) THEN EXTRA_DATA
+             ELSE miner END AS miner
+     , COUNT(DISTINCT BLOCK_NUMBER) AS n_blocks_landed
+     , min(time_required)           AS min_time_required
+     , max(time_required)           AS max_time_required
+     , avg(time_required)           AS avg_time
+     , median(time_required)        AS median_time
+FROM block_times
+WHERE BLOCK_NUMBER IN (SELECT blocknumber from LOG_TASK)
+GROUP BY 1
+
+/*optional group by hour of submission to establish high traffic intervals
+
+WITH block_times AS (SELECT
+    block_number
+    , miner
+    , EXTRA_DATA
+    , TO_TIMESTAMP(DATETIME) as timestamp
+    , LAG(block.DATETIME) OVER(ORDER BY block.BLOCK_NUMBER) AS prev_timestamp
+    , (timestamp-(LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER)))  AS time_required
+    FROM alex_marx.BLOCK
+--    WHERE BLOCK_NUMBER IN (14119786, 14119787, 14119788, 14119789, 14119790, 14119799)
+    QUALIFY LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER) is not null --omits most first block which has no reference point
+    )
+, cut_off_calc AS (SELECT BLOCK_NUMBER
+                        , ROUND(time_required / 3) AS cut_off_factor --can change here to check assumptions; broken into two equations to allow for greater time specificity as needed
+                        , timeadd(seconds, cut_off_factor*3, TO_TIMESTAMP(prev_timestamp)) AS cut_off_ts --change factor coefficient accordingly here
+                   FROM block_times
+)
+, best_bundle_in_range AS (SELECT
+    block_times.BLOCK_NUMBER
+    , ID as mev_geth_logger_id
+    , TO_BOOLEAN(LOWER(ISMEGABUNDLE)) AS megabundle
+    , TO_BOOLEAN(LOWER(ISFLASHBOTS))  AS flashbots
+    FROM LOG_TASK
+    LEFT JOIN block_times
+        ON LOG_TASK.BLOCKNUMBER = block_times.BLOCK_NUMBER
+    LEFT JOIN cut_off_calc
+        ON LOG_TASK.BLOCKNUMBER = cut_off_calc.BLOCK_NUMBER
+    WHERE TASKCREATEDAT <= cut_off_ts
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY LOG_TASK.BLOCKNUMBER ORDER BY LOG_TASK.PROFITETH DESC) = 1
+)
+SELECT
+    EXTRACT(hour, block_times.timestamp) AS timestamp_hour
+     , COUNT(DISTINCT block_times.BLOCK_NUMBER)                     AS n_blocks_landed
+     , COUNT (DISTINCT CASE
+                        WHEN flashbots = true
+                        THEN block_times.BLOCK_NUMBER END)          AS n_flashbots_submitted
+     , COUNT (DISTINCT CASE
+                        WHEN flashbots = true
+                            AND megabundle = true
+                        THEN block_times.BLOCK_NUMBER END)          AS n_flashbots_megabundles
+     , n_flashbots_megabundles/n_blocks_landed*100                  AS pct_megabundles_won
+     , min(time_required)                                           AS min_time_required
+     , max(time_required)                                           AS max_time_required
+     , avg(time_required)                                           AS avg_time
+     , median(time_required)                                        AS median_time
+FROM block_times
+LEFT JOIN best_bundle_in_range best
+    ON best.BLOCK_NUMBER = block_times.BLOCK_NUMBER
+WHERE best.BLOCK_NUMBER IN (SELECT blocknumber from LOG_TASK)
+GROUP BY 1
