@@ -15,6 +15,7 @@ SELECT
 FROM block_times
 WHERE BLOCK_NUMBER IN (SELECT blocknumber from LOG_TASK) --limiting to only those blocks where mev-geth-logger data was provided
 
+
 /* optional group by miner to examine norms
 
 WITH block_times AS (SELECT
@@ -22,11 +23,11 @@ WITH block_times AS (SELECT
     , miner
     , EXTRA_DATA
     , (timestamp-(LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER)))  AS time_required
-    FROM alex_marx.BLOCK
+    FROM BLOCK
     QUALIFY LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER) is not null
     )
 SELECT miner
-    , listagg(DISTINCT EXTRA_DATA) --aggregating here to see whether miner notes vary (they do) and whether consistent reg-ex extractible formatting was used (its not)
+    , listagg(DISTINCT EXTRA_DATA) --aggregating here to see whether miner notes vary significantly for identification purposes (they do) and whether consistent reg-ex extractible formatting was used (its not)
     , min(BLOCK_NUMBER)
     , max(BLOCK_NUMBER)
     , min(time_required)
@@ -34,24 +35,25 @@ SELECT miner
     , avg(time_required)
     , median(time_required)
 FROM block_times
-WHERE BLOCK_NUMBER IN (SELECT blocknumber from LOG_TASK)
+WHERE BLOCK_NUMBER IN (SELECT blocknumber from LOG_TRACKER)
 GROUP BY 1
+
 
 /* more refined version from above noted learnings on miner-identities + cross-reference with Etherscan
 
 WITH block_times AS (SELECT
     block_number
     , miner
-    , EXTRA_DATA
+    , extradata
     , (timestamp-(LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER)))  AS time_required
-    FROM alex_marx.BLOCK
-    QUALIFY LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER) is not null --omits most recent block which has no "later" block to reference its own end-time
+    , row_number() over (ORDER BY BLOCK_NUMBER) AS row
+    FROM BLOCK
     )
 SELECT
-    CASE WHEN EXTRA_DATA ilike '%speth%' THEN 'speth03ɳ'
-         WHEN EXTRA_DATA ilike '%geth%' THEN 'gethgolinux'
-         WHEN EXTRA_DATA ilike 'poolin%' THEN 'poolin.com'
-         WHEN EXTRA_DATA ilike 'nanopool%' OR EXTRA_DATA ilike 'eu2' THEN 'nanopool.org'
+    CASE WHEN extradata ilike '%speth%' THEN 'speth03ɳ'
+         WHEN extradata ilike '%geth%' THEN 'gethgolinux'
+         WHEN extradata ilike 'poolin%' THEN 'poolin.com'
+         WHEN extradata ilike 'nanopool%' OR extradata ilike 'eu2' THEN 'nanopool.org'
          WHEN miner = '0xea674fdde714fd979de3edf0f56aa9716b898ec8' THEN 'ethermine.org'
          WHEN miner = '0xeea5b82b61424df8020f5fedd81767f2d0d25bfb' THEN 'BTC.com'
          WHEN miner = '0x1ca43b645886c98d7eb7d27ec16ea59f509cbe1a' THEN 'ViaBTC US3'
@@ -59,13 +61,24 @@ SELECT
          WHEN miner = '0x433022c4066558e7a32d850f02d2da5ca782174d' THEN 'K1Pool.com'
          WHEN miner = '0x1ad91ee08f21be3de0ba2ba6918e714da6b45836' THEN 'Hiveon'
          WHEN miner = '0x7f101fe45e6649a6fb8f3f8b43ed03d353f2b90c' THEN 'Flexpool'
-         WHEN miner = '0x00192fb10df37c9fb26829eb2cc623cd1bf599e8' THEN '2miners'
          WHEN miner = '0xc365c3315cf926351ccaf13fa7d19c8c4058c8e1' THEN 'pool.binance'
          WHEN miner = '0x4069e799da927c06b430e247b2ee16c03e8b837d' THEN '666 mining'
          WHEN miner = '0x26b3eea1cd34a4aff7ce828a5f71daac042d38e0' THEN 'Luxor Tech'
          WHEN miner = '0x829bd824b016326a401d083b33d092293333a830' THEN 'F2Pool'
          WHEN miner = '0x8b4de256180cfec54c436a470af50f9ee2813dbb' THEN 'SBI Crypto Pool'
-         WHEN miner = '0x3ecef08d0e2dad803847e052249bb4f8bff2d5bb' OR EXTRA_DATA ilike 'seo%' THEN 'MiningPoolHub'
+         WHEN miner = '0xd757fd54b273bb1234d4d9993f27699d28d0edd2' THEN 'KuCoin Pool'
+         WHEN miner = '0x249bdb4499bd7c683664c149276c1d86108e2137' THEN 'CruxPool'
+         WHEN miner = '0x4f9bebe3adc3c7f647c0023c60f91ac9dffa52d5' THEN 'Crazy Pool'
+         WHEN miner = '0x7777788200b672a42421017f65ede4fc759564c8' THEN 'Krptex'
+         WHEN miner = '0xf35074bbd0a9aee46f4ea137971feec024ab704e' THEN 'SoloPool'
+         WHEN miner = '0x6a851246689eb8fc77a9bf68df5860f13f679fa0' THEN 'ZetTechnologies'
+         WHEN miner = '0xa1b7326d90a4d796ef0992a3fb4ef0702bf372ea' THEN 'WoolyPooly'
+         WHEN miner = '0xcd7b9e2b957c819000b1a8107130f786636c5ccc' THEN 'Pool2Mine'
+         WHEN miner = '0x534cb1d3812c92894f051999dd393f1bdbdc6c87' THEN 'HeroMiners'
+         WHEN miner = '0xd60267809d21b6da73cd0bd04bc589eeef791dfe' THEN 'HashBlue'
+         WHEN extradata ilike 'eu%' OR extradata ilike 'us%' THEN concat(miner, ' eu/usHEX')
+         WHEN miner IN ('0x00192fb10df37c9fb26829eb2cc623cd1bf599e8', '0x002e08000acbbae2155fab7ac01929564949070d') THEN '2miners'
+         WHEN miner = '0x3ecef08d0e2dad803847e052249bb4f8bff2d5bb' OR extradata ilike 'seo%' THEN 'MiningPoolHub'
          WHEN miner IN ('0xc7fabfd21f0b3254686337b63b4f1282c29aadd8',
                         '0x776bb566dc299c9e722773d2a04b401e831a6dc8',
                         '0x52bc44d5378309ee2abf1539bf71de1b7d7be3b5',
@@ -73,16 +86,17 @@ SELECT
                         '0x03e75d7dd38cce2e20ffee35ec914c57780a8e29',
                         '0xc3348b43d3881151224b490e4aa39e03d2b1cdea',
                         '0xc93452a74e596e81e4f73ca1acff532089ad4c62'
-                       ) THEN EXTRA_DATA
+                       ) THEN extradata
              ELSE miner END AS miner
-     , COUNT(DISTINCT BLOCK_NUMBER) AS n_blocks_landed
-     , min(time_required)           AS min_time_required
-     , max(time_required)           AS max_time_required
-     , avg(time_required)           AS avg_time
-     , median(time_required)        AS median_time
+     , COUNT(DISTINCT BLOCK_NUMBER)                                 AS n_blocks_landed
+     , min(time_required)                                           AS min_time_required
+     , max(time_required)                                           AS max_time_required
+     , avg(time_required)                                           AS avg_time
+     , PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY time_required)   AS median_time
 FROM block_times
-WHERE BLOCK_NUMBER IN (SELECT blocknumber from LOG_TASK)
+WHERE BLOCK_NUMBER IN (SELECT blocknumber from log_tracker)
 GROUP BY 1
+
 
 /*optional group by hour of submission to establish high traffic intervals
 
