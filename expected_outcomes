@@ -1,0 +1,63 @@
+WITH block_times AS (SELECT
+    block_number
+    , miner
+    , (timestamp-(LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER)))  AS time_required
+    , LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER DESC) AS next_timestamp
+    FROM alex_marx.BLOCK
+    QUALIFY LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER) is not null --omits first block where time_required calc is impossible
+    )
+, cut_off_calc AS (SELECT BLOCK_NUMBER
+                        , ROUND(time_required / 3) AS last_refresh --can change refresh factor here to check assumptions
+                        , last_refresh * 1000      AS mscutoff --transfers into ms for closest comparison
+                   FROM block_times
+    )
+, best_bundle_in_range AS (SELECT
+    block_times.BLOCK_NUMBER
+    , ID                                AS mev_geth_logger_id
+    , TO_BOOLEAN(LOWER(ISMEGABUNDLE))   AS megabundle
+    , TO_BOOLEAN(LOWER(ISFLASHBOTS))    AS flashbots
+    , WORKERID
+    , time_required
+    , next_timestamp
+    FROM LOG_TASK
+    LEFT JOIN block_times
+        ON LOG_TASK.BLOCKNUMBER = block_times.BLOCK_NUMBER
+    LEFT JOIN cut_off_calc
+        ON LOG_TASK.BLOCKNUMBER = cut_off_calc.block_number
+    WHERE mssinceblockstart <= mscutoff
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY LOG_TASK.BLOCKNUMBER ORDER BY LOG_TASK.PROFITETH DESC) = 1
+    )
+    
+--The following 2 queries can be used for discrepancy spot-checking
+--SELECT block_number FROM best_bundle_in_range where flashbots = false
+--SELECT distinct blocknumber FROM LOG_TASK WHERE BLOCKNUMBER not in (SELECT block_number from best_bundle_in_range)
+
+, viable AS (SELECT
+                blocknumber AS viable_block
+                , id AS viable_id
+              FROM LOG_TASK
+                LEFT JOIN cut_off_calc
+              WHERE MSSINCEBLOCKSTART <= mscutoff
+    )
+    
+--The following two queries can be used to check on 4 blocks where no viable submission was made
+--select BLOCKNUMBER from LOG_TASK where BLOCKNUMBER not in (SELECT viable_block FROM viable)
+--SELECT blocknumber, COUNT (DISTINCT viable_id) FROM LOG_TASK LEFT JOIN viable on viable.viable_block = log_task.BLOCKNUMBER GROUP BY 1
+
+, projection_calc AS (SELECT
+    COUNT (DISTINCT viable_block)                                          AS total_with_viable_submissions
+    , COUNT (DISTINCT CASE
+                        WHEN flashbots = true
+                        THEN BLOCK_NUMBER END)                              AS n_flashbots_submitted
+    , COUNT (DISTINCT CASE
+                        WHEN flashbots = true
+                            AND megabundle = true
+                        THEN BLOCK_NUMBER END)                              AS n_flashbots_megabundles
+    , n_flashbots_submitted/total_with_viable_submissions*100               AS pct_flashbots_won
+    , n_flashbots_megabundles/total_with_viable_submissions*100             AS pct_megabundles_won
+    FROM best_bundle_in_range
+    LEFT JOIN viable
+        ON best_bundle_in_range.BLOCK_NUMBER = viable.viable_block
+)
+SELECT block_number FROM best_bundle_in_range
+WHERE megabundle = true
