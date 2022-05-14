@@ -23,13 +23,3 @@ WITH block_times AS (SELECT
 -- select block_number FROM best_bundle_in_range WHERE flashbots = true AND megabundle = true
 -- select workerid, COUNT (distinct block_number) FROM best_bundle_in_range GROUP BY 1
 
-SELECT COUNT (DISTINCT BLOCK_NUMBER)            AS total_n_blocks_with_viable_transactions
-    , COUNT (DISTINCT CASE
-                        WHEN flashbots = true
-                        THEN BLOCK_NUMBER END)  AS n_flashbots_submitted
-    , COUNT (DISTINCT CASE
-                        WHEN flashbots = true
-                            AND megabundle = true
-                        THEN BLOCK_NUMBER END)  AS n_flashbots_megabundles
-    , n_flashbots_megabundles/total_n_blocks_with_viable_transactions*100 AS pct_megabundles_won
-    FROM best_bundle_in_range
