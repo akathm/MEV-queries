@@ -1,0 +1,41 @@
+WITH block_times AS (SELECT
+    block_number
+    , miner
+    , extradata
+    , DATETIME AS timestamp
+    , (timestamp-(LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER)))  AS time_required
+    , LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER DESC) AS next_timestamp
+    , row_number() over (ORDER BY BLOCK_NUMBER) AS row
+    FROM BLOCK
+    )
+    
+/*For distribution of all blocks:
+-- SELECT time_required, count(distinct block_number) FROM block_times GROUP BY 1
+
+/*For distribution of expected megabundles or flashbots-inclusive blocks
+    
+, cut_off_calc AS (SELECT BLOCK_NUMBER
+                        , ROUND(time_required / 3)             AS last_refresh --can change here to check assumptions
+                        , ROUND(time_required / 3) * 3000      AS mscutoff --transfers into ms for closest comparison
+                   FROM block_times
+                   )
+, best_bundle_in_range AS (SELECT
+    block_times.BLOCK_NUMBER
+    , ID as mev_geth_logger_id
+    , ismegabundle
+    , ISFLASHBOTS
+    , ROW_NUMBER() OVER (PARTITION BY log_tracker.BLOCKNUMBER ORDER BY log_tracker.PROFITETH DESC) AS profit_rank
+    FROM log_tracker
+    LEFT JOIN cut_off_calc
+        ON log_tracker.BLOCKNUMBER = cut_off_calc.BLOCK_NUMBER
+    LEFT JOIN block_times
+        ON log_tracker.blocknumber = block_times.block_number
+    WHERE mssinceblockstart <= mscutoff OR (time_required <= 3 AND mssinceblockstart <= (time_required*1000))
+)
+SELECT time_required
+       , count(distinct block_times.block_number)
+FROM best_bundle_in_range
+    LEFT JOIN block_times ON block_times.block_number = best_bundle_in_range.block_number
+       WHERE profit_rank = 1
+       AND isflashbots = true --AND ismegabundle = true
+GROUP BY 1
