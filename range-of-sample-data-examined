@@ -16,7 +16,7 @@ FROM block_times
 WHERE BLOCK_NUMBER IN (SELECT blocknumber from LOG_TASK) --limiting to only those blocks where mev-geth-logger data was provided
 
 
-/* optional group by miner to examine norms
+/* group by miner to examine norms
 
 WITH block_times AS (SELECT
     block_number
@@ -98,54 +98,24 @@ WHERE BLOCK_NUMBER IN (SELECT blocknumber from log_tracker)
 GROUP BY 1
 
 
-/*optional group by hour of submission to establish high traffic intervals
+/* group by hour of submission to establish whether high traffic intervals have impact
 
 WITH block_times AS (SELECT
     block_number
     , miner
-    , EXTRA_DATA
-    , TO_TIMESTAMP(DATETIME) as timestamp
+    , extradata
+    , DATETIME AS timestamp
     , LAG(block.DATETIME) OVER(ORDER BY block.BLOCK_NUMBER) AS prev_timestamp
     , (timestamp-(LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER)))  AS time_required
-    FROM alex_marx.BLOCK
---    WHERE BLOCK_NUMBER IN (14119786, 14119787, 14119788, 14119789, 14119790, 14119799)
-    QUALIFY LAG(block.timestamp) OVER(ORDER BY block.BLOCK_NUMBER) is not null --omits most first block which has no reference point
+    , row_number() over (ORDER BY BLOCK_NUMBER) AS row
+    FROM BLOCK
     )
-, cut_off_calc AS (SELECT BLOCK_NUMBER
-                        , ROUND(time_required / 3) AS cut_off_factor --can change here to check assumptions; broken into two equations to allow for greater time specificity as needed
-                        , timeadd(seconds, cut_off_factor*3, TO_TIMESTAMP(prev_timestamp)) AS cut_off_ts --change factor coefficient accordingly here
-                   FROM block_times
-)
-, best_bundle_in_range AS (SELECT
-    block_times.BLOCK_NUMBER
-    , ID as mev_geth_logger_id
-    , TO_BOOLEAN(LOWER(ISMEGABUNDLE)) AS megabundle
-    , TO_BOOLEAN(LOWER(ISFLASHBOTS))  AS flashbots
-    FROM LOG_TASK
-    LEFT JOIN block_times
-        ON LOG_TASK.BLOCKNUMBER = block_times.BLOCK_NUMBER
-    LEFT JOIN cut_off_calc
-        ON LOG_TASK.BLOCKNUMBER = cut_off_calc.BLOCK_NUMBER
-    WHERE TASKCREATEDAT <= cut_off_ts
-    QUALIFY ROW_NUMBER() OVER (PARTITION BY LOG_TASK.BLOCKNUMBER ORDER BY LOG_TASK.PROFITETH DESC) = 1
-)
 SELECT
-    EXTRACT(hour, block_times.timestamp) AS timestamp_hour
+    EXTRACT(hour FROM block_times.timestamp) AS timestamp_hour
      , COUNT(DISTINCT block_times.BLOCK_NUMBER)                     AS n_blocks_landed
-     , COUNT (DISTINCT CASE
-                        WHEN flashbots = true
-                        THEN block_times.BLOCK_NUMBER END)          AS n_flashbots_submitted
-     , COUNT (DISTINCT CASE
-                        WHEN flashbots = true
-                            AND megabundle = true
-                        THEN block_times.BLOCK_NUMBER END)          AS n_flashbots_megabundles
-     , n_flashbots_megabundles/n_blocks_landed*100                  AS pct_megabundles_won
      , min(time_required)                                           AS min_time_required
      , max(time_required)                                           AS max_time_required
      , avg(time_required)                                           AS avg_time
-     , median(time_required)                                        AS median_time
+     , PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY time_required)   AS median_time
 FROM block_times
-LEFT JOIN best_bundle_in_range best
-    ON best.BLOCK_NUMBER = block_times.BLOCK_NUMBER
-WHERE best.BLOCK_NUMBER IN (SELECT blocknumber from LOG_TASK)
 GROUP BY 1
