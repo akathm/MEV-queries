@@ -1,0 +1,18 @@
+CREATE TABLE log_tracker
+(ID varchar(9), insertedat timestamp, blocknumber int,
+workerid varchar(11), profitwei float8, profiteth float8, isflashbots boolean,
+ismegabundle boolean, worker varchar(2), taskcreatedat timestamp,
+blocktimestamp bigint, blockhash varchar, difficulty bigint, gaslimit bigint,
+gasused bigint, numtx int, mssinceblockstart int);
+
+COPY log_tracker FROM '/log_tracker.csv' DELIMITER ',' csv header;
+
+
+CREATE TABLE block
+(block_hash varchar, block_number int, timestamp int,
+gas_limit int, gas_used int, miner varchar, extradata varchar,
+version char(1), datetime timestamp, priceusd double precision,
+tail_gas_price bigint, base_fee_per_gas varchar, eden_rating int,
+eden_staked_rating boolean);
+
+COPY block FROM '/block.csv' DELIMITER ',' csv header;
