@@ -1,0 +1,23 @@
+with profit_calc AS (SELECT profit.block_number
+     , block_net_profit
+     , max(profiteth) as max_possible
+     , 100-(block_net_profit/(max(profiteth))*100) AS pct_potential_as_loss
+FROM profit
+    LEFT JOIN log_tracker
+        ON profit.block_number = log_tracker.blocknumber
+WHERE block_number IN (14000009,
+                        14000041,
+                        14000045,
+                        14000069,
+                        14000076,
+                        14000079,
+                        14000084,
+                        14000091,
+                        14000098,
+                        14000100,
+                        14000127,
+                        14000151)
+AND isflashbots = true
+GROUP BY 1, 2
+)
+SELECT avg(pct_potential_as_loss), avg(max_possible - block_net_profit) AS avg_loss_eth from profit_calc
