@@ -1,0 +1,18 @@
+version: "3.9"  # optional since v1.27.0
+services:
+  fb: &def
+    #(in local directory) % sudo docker cp ~/Locations/nameoffile.file ###container###:/nameoffile.file
+    ##docker run --name flashbots -e POSTGRES_PASSWORD=admin -p 5432:5432 -d postgres
+    ###build not needed for postres premade build
+    container_name: flashbots
+    image: postgres ##whenever docker cannot find an image locally it downloads; verified common libraries cuter names; free to publish a public image for docker
+    environment:
+      POSTGRES_PASSWORD: admin
+    ports:
+      - "5432:5432" ##left: local right: inside container
+    volumes:
+      - "~/Downloads/mevgeth_log_task-100k_blocks.csv:/log_tracker.csv"
+      - "~/Downloads/block.csv:/block.csv"
+      - "~/Downloads/block-profit.csv:/block-profit.csv"
+  ##sc: <<:*def
+    ##environment: <<:*anyname
