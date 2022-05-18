@@ -40,7 +40,9 @@ WITH block_times AS (SELECT
     )
 select
      sum (viable_calc.profiteth) AS profit_from_viable
-     , sum (best_bundle_in_range.profiteth) AS profit_from_best_all_time
+     , sum (case when viable_calc.profiteth >= profit.block_net_profit THEN best_bundle_in_range.profiteth
+                else block_net_profit END) AS profit_from_best_all_time
+     , sum (case when profit.block_number BETWEEN 14000001 AND 14121050 THEN block_net_profit END) AS actual_profit
      , count(distinct case when viable_calc.ismegabundle = true then viable_calc.block_number end) AS n_mb_viable
      , count(distinct case when best_bundle_in_range.ismegabundle = true then best_bundle_in_range.block_number end) AS n_mb_all_time
      , count(distinct case when viable_calc.isflashbots = true then viable_calc.block_number end) AS n_fb_viable
@@ -48,5 +50,7 @@ select
 FROM best_bundle_in_range
 LEFT JOIN viable_calc
     ON viable_calc.block_number = best_bundle_in_range.block_number
+LEFT JOIN profit
+    ON profit.block_number = best_bundle_in_range.block_number
 WHERE viable_calc.profit_rank = 1
 AND best_bundle_in_range.profit_rank = 1
